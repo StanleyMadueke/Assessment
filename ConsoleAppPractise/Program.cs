@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Runtime.Caching;
 using System.IO;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace Viagogo
 {
@@ -26,6 +28,7 @@ namespace Viagogo
             var events = new List<Event>{
                 new Event{ Name = "Phantom of the Opera", City = "New York"},
                 new Event{ Name = "Metallica", City = "Los Angeles"},
+                new Event{ Name = "Metallica", City = "Los Angeles"},
                 new Event{ Name = "Metallica", City = "New York"},
                 new Event{ Name = "Metallica", City = "Boston"},
                 new Event{ Name = "LadyGaGa", City = "New York"},
@@ -46,6 +49,7 @@ namespace Viagogo
             foreach (var item in query)
             {
                 AddToEmail(customer, item);
+                Console.WriteLine(item.City);
             }
             /*
             *	We want you to send an email to this customer with all events in their city
@@ -60,15 +64,17 @@ namespace Viagogo
             {
                 try
                 {
-                  
-                    //Q3.If the GetDistance method is an API call, implement caching. 
-                    
-                    var distance = GetOrSetCache($"{customer.City}-{item.City}", () => GetDistance(customer.City, item.City));
+                    //Q3.If the GetDistance method is an API call, implement caching.                   
+                    var distance = GetOrSetCache($"{item.Name}{item.City}", () => GetDistance(customer.City, item.City));
+                    //var distance = GetDistanceAPI(customer, item);
+
+                    Console.WriteLine($"distance from GetDistance API {distance} ");
 
                     // If customers city and event city are different, add the distance(Key) and event(value) to the sorted dictionary
-                    if (distance > 0 )
+                    if (distance > 0 & !closestevents.ContainsKey(distance))
                     {
                         closestevents.Add(distance, item);
+                        //Console.WriteLine(distance);
                     }
                    
                 }
@@ -79,18 +85,21 @@ namespace Viagogo
 
             }
 
-            // 2.2 Send the 5 closest city to the customer
-            int NoOfEvents = 0;
-            foreach (var item in closestevents)
-            {
-                if( NoOfEvents == 5)
-                {
-                    break;
-                }
-                AddToEmail(customer, item.Value);
-                NoOfEvents++;
+            //2.Get 5 closest events to customer
+            // then add to email.
+            int NoOfEvents = 5;
+            var eventsquery = (from result in closestevents
+                             select result).Take(NoOfEvents);
 
+            // 2.2 Send the 5 closest city to the customer
+            foreach (var item in eventsquery)
+            {
+                AddToEmail(customer, item.Value);
+
+                Console.WriteLine($"Closest Event to Customer - {item.Value.Name} -- {item.Value.City}");
             }
+
+            
 
 
             /*Q.5 
@@ -104,8 +113,11 @@ namespace Viagogo
                 {
                     //Get the price of events
                     var EventPrice = GetPrice(item);
+                    
 
                     SortedEventPrice.Add(EventPrice, item);
+
+                    //Console.WriteLine($"Event {item.Name} in {item.City} has price of {EventPrice}");
 
                 }
                 catch (Exception ex)
@@ -113,6 +125,19 @@ namespace Viagogo
                     Console.WriteLine(ex.Message);
                 }
 
+            }
+
+            var pricequery = from result in SortedEventPrice
+                             where result.Key < 20 //assumed price of $20
+                              select result;
+
+            //Send the mail to cutomer including price
+            foreach (var item in pricequery)
+            {
+
+                AddToEmail(customer, item.Value, item.Key);
+
+                Console.WriteLine($"Event {item.Value.Name} in {item.Value.City} has price of {item.Key}"); 
             }
 
         }
@@ -166,11 +191,31 @@ namespace Viagogo
             return result;
         }
 
-        private static T GetOrSetCache<T>(string key, Func<T> apiCall)
+       
+        private static T GetOrSetCache<T>(string Key, Func<T> apiCall)
         {
             //check if cache exist with key and return value
             //or call func and save response in cache
-            return default;
+            var distance = (dynamic)null;
+
+            ObjectCache Cache = MemoryCache.Default;
+
+            if (Cache.Contains(Key))
+            {
+                return (T)Cache.Get(Key);
+            }
+            else
+            {
+                CacheItemPolicy policy = new CacheItemPolicy();
+                policy.AbsoluteExpiration = DateTimeOffset.UtcNow.AddMinutes(30);
+
+                distance = apiCall.Invoke();
+
+                Cache.Set(Key, distance, policy);
+            }
+              
+
+            return distance;
         }
     }
 }
